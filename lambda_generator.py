@@ -1,6 +1,8 @@
-from builders.lambda_builder import build_lambda
+from builders.lambda_builder import Project
+project = Project('components')
 
-tf = build_lambda('test', 'invoke_handler')
+tf = project.lambda_builder('test', 'invoke_handler').add_s3_access().build()
+
 print(tf)
 
 import os

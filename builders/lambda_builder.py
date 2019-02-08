@@ -5,34 +5,70 @@ import terrascript.aws.r as r
 from awacs.helpers.trust import make_simple_assume_policy
 from awacs.aws import PolicyDocument
 
-application = 'components'
+class Project:
+  def __init__(self, name):
+    self.name = name
+
+  def lambda_builder(self, title, handler):
+    return LambdaBuilder(self.name, title, handler)
 
 
 class LambdaBuilder:
-  def __init__(self, title, handler):
+  def __init__(self, project, title, handler):
+    self.project = project
     self.ts = Terrascript()
     self.title = title
     self.handler = handler
+    self.role = self._default_lambda_role()
 
-  def build(self):
-    ts = Terrascript()
-    title = self.title
 
-    def titled(name):
-      return self.title + '_' + name
+  def titled(self, name):
+    return self.title + '_' + name
 
-    def env_titled(name):
-      return self.title + '_' + name + '_${terraform.workspace}'
 
+  def env_titled(self, name):
+    return self.title + '_' + name + '_${terraform.workspace}'
+
+
+  def _default_lambda_role(self):
     lambda_trust_policy = make_simple_assume_policy('lambda.amazonaws.com')
 
-    role = ts.add(r.aws_iam_role(titled('role'), name=env_titled('role'),
-                                  assume_role_policy=lambda_trust_policy.to_json()))
+    return self._add(r.aws_iam_role(self.titled('role'), 
+      name=self.env_titled('role'),
+      assume_role_policy=lambda_trust_policy.to_json()))
+    
+
+  def add_s3_access(self):
+    self.add_permission({"Action": "s3:*", "Resource": "*"})
+    return self
+
+
+  def add_permission(self, statement):
+    permissions = {
+      "Version": "2012-10-17",
+      "Statement": [statement]
+    }
+
+    policy = self._add(r.aws_iam_policy(self.titled('main_policy'), 
+        name=self.env_titled('main_policy'),
+        policy=json.dumps(permissions)))
+
+    self._add(r.aws_iam_role_policy_attachment(self.titled('policy_attachment'), 
+        role=self.role.name,
+        policy_arn=policy.arn))
+
+
+  def build(self):
+    ts = self.ts
+    title = self.title
+
+    titled = self.titled
+    env_titled = self.env_titled
 
     ts.add(r.aws_lambda_function(f'{title}',
       filename      = "${path.module}/target/" + title + ".zip",
-      function_name = application + "_" + title + "_${terraform.workspace}",
-      role          = role.arn,
+      function_name = self.project + "_" + title + "_${terraform.workspace}",
+      role          = self.role.arn,
       handler       = f"{title}.{self.handler}",
       runtime       = "python3.6",
 
@@ -44,25 +80,12 @@ class LambdaBuilder:
       },
 
       tags = {
-        'Name': application + '-${terraform.workspace}-' + title + '-lambda',
-        'Application': application
+        'Name': self.project + '-${terraform.workspace}-' + title + '-lambda',
+        'Application': self.project
       }
     ))
-
-    permissions = {
-      "Version": "2012-10-17",
-      "Statement": [{"Action": "s3:*", "Resource": "*"}]
-    }
-
-    policy = ts.add(r.aws_iam_policy(titled('main_policy'), name=env_titled('main_policy'),
-                        policy=json.dumps(permissions)))
-
-    ts.add(r.aws_iam_role_policy_attachment(
-        titled('policy_attachment'), role=role.name, policy_arn=policy.arn))
-
-    tf = ts.dump()
-    return tf
+    return ts.dump()
 
 
-def build_lambda(title, handler):
-  return LambdaBuilder(title, handler).build()
+  def _add(self, resource):
+    return self.ts.add(resource)
