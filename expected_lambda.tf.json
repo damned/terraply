@@ -1,0 +1,41 @@
+{
+  "resource": {
+    "aws_iam_policy": {
+      "test_main_policy": {
+        "name": "test_main_policy_${terraform.workspace}",
+        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Action\": \"s3:*\", \"Resource\": \"*\"}]}"
+      }
+    },
+    "aws_iam_role": {
+      "test_role": {
+        "assume_role_policy": "{\n    \"Statement\": [\n        {\n            \"Action\": [\n                \"sts:AssumeRole\"\n            ],\n            \"Effect\": \"Allow\",\n            \"Principal\": {\n                \"Service\": [\n                    \"lambda.amazonaws.com\"\n                ]\n            }\n        }\n    ],\n    \"Version\": \"2012-10-17\"\n}",
+        "name": "test_role_${terraform.workspace}"
+      }
+    },
+    "aws_iam_role_policy_attachment": {
+      "test_policy_attachment": {
+        "policy_arn": "${aws_iam_policy.test_main_policy.arn}",
+        "role": "${aws_iam_role.test_role.name}"
+      }
+    },
+    "aws_lambda_function": {
+      "test": {
+        "environment": {
+          "variables": {
+            "ENVIRONMENT": "${terraform.workspace}"
+          }
+        },
+        "filename": "${path.module}/target/test.zip",
+        "function_name": "components_test_${terraform.workspace}",
+        "handler": "test.invoke_handler",
+        "role": "${aws_iam_role.test_role.arn}",
+        "runtime": "python3.6",
+        "source_code_hash": "${base64sha256(file(\"${path.module}/target/test.zip\"))}",
+        "tags": {
+          "Application": "components",
+          "Name": "components-${terraform.workspace}-test-lambda"
+        }
+      }
+    }
+  }
+}
