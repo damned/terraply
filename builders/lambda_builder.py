@@ -5,12 +5,43 @@ import terrascript.aws.r as r
 from awacs.helpers.trust import make_simple_assume_policy
 from awacs.aws import PolicyDocument
 
+from ostruct import OpenStruct
+
 class Project:
   def __init__(self, name):
     self.name = name
 
   def lambda_builder(self, title, handler):
     return LambdaBuilder(self.name, title, handler)
+
+
+def snaked(*parts):
+  return '_'.join(parts)
+
+
+def roped(*parts):
+  return '-'.join(parts).replace('_', '-')
+
+
+def joined(*parts):
+  return ''.join(parts)
+
+refs = OpenStruct({
+  'env': '${terraform.workspace}'
+})
+
+
+class StatementBuilder:
+  def __init__(self):
+    self.statement = {}
+
+  def add_s3_access(self, what = 's3:*', which = '*'):
+    self.statement['Action'] = what
+    self.statement['Resource'] = which
+    return self
+
+  def build(self):
+    return self.statement
 
 
 class LambdaBuilder:
@@ -23,11 +54,10 @@ class LambdaBuilder:
 
 
   def titled(self, name):
-    return self.title + '_' + name
-
+    return snaked(self.title, name)
 
   def env_titled(self, name):
-    return self.title + '_' + name + '_${terraform.workspace}'
+    return snaked(self.title, name, refs.env)
 
 
   def _default_lambda_role(self):
@@ -35,11 +65,12 @@ class LambdaBuilder:
 
     return self._add(r.aws_iam_role(self.titled('role'), 
       name=self.env_titled('role'),
-      assume_role_policy=lambda_trust_policy.to_json()))
+      assume_role_policy=lambda_trust_policy.to_json()
+    ))
     
 
   def add_s3_access(self):
-    self.add_permission({"Action": "s3:*", "Resource": "*"})
+    self.add_permission(StatementBuilder().add_s3_access().build())
     return self
 
 
@@ -66,21 +97,22 @@ class LambdaBuilder:
     env_titled = self.env_titled
 
     ts.add(r.aws_lambda_function(f'{title}',
-      filename      = "${path.module}/target/" + title + ".zip",
-      function_name = self.project + "_" + title + "_${terraform.workspace}",
+      filename      = joined("${path.module}/target/", title, ".zip"),
+      function_name = snaked(self.project, title, refs.env),
       role          = self.role.arn,
       handler       = f"{title}.{self.handler}",
       runtime       = "python3.6",
 
       source_code_hash = "${base64sha256(file(\"${path.module}/target/" + title + ".zip\"))}",
+
       environment = {
         'variables': {
-          "ENVIRONMENT": "${terraform.workspace}"
+          "ENVIRONMENT": refs.env
         }
       },
 
       tags = {
-        'Name': self.project + '-${terraform.workspace}-' + title + '-lambda',
+        'Name': roped(self.project, refs.env, title, 'lambda'),
         'Application': self.project
       }
     ))
