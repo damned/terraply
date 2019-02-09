@@ -1,0 +1,2 @@
+make more builder-like:
+ - lambda - add env vars

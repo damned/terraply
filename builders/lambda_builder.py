@@ -7,6 +7,9 @@ from awacs.aws import PolicyDocument
 
 from ostruct import OpenStruct
 
+from .piecers import *
+
+
 class Project:
   def __init__(self, name):
     self.name = name
@@ -14,17 +17,6 @@ class Project:
   def lambda_builder(self, title, handler):
     return LambdaBuilder(self.name, title, handler)
 
-
-def snaked(*parts):
-  return '_'.join(parts)
-
-
-def roped(*parts):
-  return '-'.join(parts).replace('_', '-')
-
-
-def joined(*parts):
-  return ''.join(parts)
 
 refs = OpenStruct({
   'env': '${terraform.workspace}'
@@ -51,23 +43,14 @@ class LambdaBuilder:
     self.title = title
     self.handler = handler
     self.role = self._default_lambda_role()
+    self.variables = {}
+    self.runtime = "python3.6"
 
 
-  def titled(self, name):
-    return snaked(self.title, name)
+  def add_variable(self, key, value):
+    self.variables[key] = value
+    return self
 
-  def env_titled(self, name):
-    return snaked(self.title, name, refs.env)
-
-
-  def _default_lambda_role(self):
-    lambda_trust_policy = make_simple_assume_policy('lambda.amazonaws.com')
-
-    return self._add(r.aws_iam_role(self.titled('role'), 
-      name=self.env_titled('role'),
-      assume_role_policy=lambda_trust_policy.to_json()
-    ))
-    
 
   def add_s3_access(self):
     self.add_permission(StatementBuilder().add_s3_access().build())
@@ -89,6 +72,16 @@ class LambdaBuilder:
         policy_arn=policy.arn))
 
 
+  @property
+  def source_zip(self):
+    return joined("${path.module}/target/", self.title, ".zip")
+
+
+  @property
+  def function_name(self):
+    return snaked(self.project, self.title, refs.env)
+
+
   def build(self):
     ts = self.ts
     title = self.title
@@ -96,34 +89,49 @@ class LambdaBuilder:
     titled = self.titled
     env_titled = self.env_titled
 
-
     params = {
-      'environment': {
-        'variables': {
-          "ENVIRONMENT": refs.env
-        }
-      },
       'tags': {
         'Name': roped(self.project, refs.env, title, 'lambda'),
         'Application': self.project
       }
-
     }
+
+    if len(self.variables) > 0:
+      params['environment'] = {
+        'variables': self.variables
+      }
 
 
     ts.add(r.aws_lambda_function(f'{title}',
-      filename      = joined("${path.module}/target/", title, ".zip"),
-      function_name = snaked(self.project, title, refs.env),
+      filename      = self.source_zip,
+      function_name = self.function_name,
       role          = self.role.arn,
       handler       = f"{title}.{self.handler}",
-      runtime       = "python3.6",
+      runtime       = self.runtime,
 
-      source_code_hash = "${base64sha256(file(\"${path.module}/target/" + title + ".zip\"))}",
+      source_code_hash = "${base64sha256(file(\"" + self.source_zip + "\"))}",
 
       **params
     ))
     return ts.dump()
 
+
+  def titled(self, name):
+    return snaked(self.title, name)
+
+
+  def env_titled(self, name):
+    return snaked(self.title, name, refs.env)
+
+
+  def _default_lambda_role(self):
+    lambda_trust_policy = make_simple_assume_policy('lambda.amazonaws.com')
+
+    return self._add(r.aws_iam_role(self.titled('role'), 
+      name=self.env_titled('role'),
+      assume_role_policy=lambda_trust_policy.to_json()
+    ))
+    
 
   def _add(self, resource):
     return self.ts.add(resource)

@@ -1,7 +1,11 @@
-from builders.lambda_builder import Project
+from builders.lambda_builder import Project, refs
 project = Project('components')
 
-tf = project.lambda_builder('test', 'invoke_handler').add_s3_access().build()
+tf = (
+  project.lambda_builder('test', 'invoke_handler')
+    .add_s3_access()
+    .add_variable('ENVIRONMENT', refs.env).build()
+)
 
 print(tf)
 
