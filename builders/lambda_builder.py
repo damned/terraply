@@ -96,6 +96,21 @@ class LambdaBuilder:
     titled = self.titled
     env_titled = self.env_titled
 
+
+    params = {
+      'environment': {
+        'variables': {
+          "ENVIRONMENT": refs.env
+        }
+      },
+      'tags': {
+        'Name': roped(self.project, refs.env, title, 'lambda'),
+        'Application': self.project
+      }
+
+    }
+
+
     ts.add(r.aws_lambda_function(f'{title}',
       filename      = joined("${path.module}/target/", title, ".zip"),
       function_name = snaked(self.project, title, refs.env),
@@ -105,16 +120,7 @@ class LambdaBuilder:
 
       source_code_hash = "${base64sha256(file(\"${path.module}/target/" + title + ".zip\"))}",
 
-      environment = {
-        'variables': {
-          "ENVIRONMENT": refs.env
-        }
-      },
-
-      tags = {
-        'Name': roped(self.project, refs.env, title, 'lambda'),
-        'Application': self.project
-      }
+      **params
     ))
     return ts.dump()
 
