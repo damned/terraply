@@ -1,5 +1,5 @@
 from builders.lambda_builder import Project, refs
-project = Project('components')
+project = Project('monitoring_api')
 
 tf = (
   project.lambda_builder('test', 'invoke_handler')
@@ -13,3 +13,4 @@ import os
 
 with open(os.path.join(os.path.dirname(__file__), 'lambda_generated.tf.json'), 'w') as f:
     f.write(tf)
+    f.write('\n')
